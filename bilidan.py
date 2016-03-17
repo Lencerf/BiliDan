@@ -234,7 +234,10 @@ def biligrab(url, *, debug=False, verbose=False, media=None, comment=None, cooki
                     increase_fps = False
                     break
         command_line = ['mpv']
-        if video_size[0] >= 1280 or video_size[1] >= 720:
+        print('attention!')
+        print(video_resolution[0])
+        print(video_resolution[1])
+        if video_resolution[0] >= 1280 or video_resolution[1] >= 720:
             command_line += ['--fs', '--autofit', '950x540']
         if mpv_version_gte_0_6:
             command_line += ['--cache-file', 'TMP']
@@ -296,6 +299,8 @@ def biligrab(url, *, debug=False, verbose=False, media=None, comment=None, cooki
 
     logging.info('Determining video resolution...')
     video_size = get_video_size(media_urls)
+    video_resolution = video_size 
+    print(video_size[0])
     logging.info('Video resolution: %sx%s' % video_size)
     if video_size[0] > 0 and video_size[1] > 0:
         video_size = (video_size[0]*1080/video_size[1], 1080)  # Simply fix ASS resolution to 1080p

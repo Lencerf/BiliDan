@@ -199,7 +199,7 @@ def biligrab(url, *, debug=False, verbose=False, media=None, comment=None, cooki
         comment_in = io.StringIO(resp_comment.decode('utf-8', 'replace'))
         comment_out = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8-sig', newline='\r\n', prefix='tmp-danmaku2ass-', suffix='.ass', delete=False)
         logging.info('Invoking Danmaku2ASS, converting to %s' % comment_out.name)
-        d2a_args = dict({'stage_width': video_size[0], 'stage_height': video_size[1], 'font_face': 'SimHei', 'font_size': math.ceil(video_size[1]/21.6), 'text_opacity': 0.8, 'duration_marquee': min(max(6.75*video_size[0]/video_size[1]-4, 3.0), 8.0), 'duration_still': 5.0}, **d2aflags)
+        d2a_args = dict({'stage_width': video_size[0], 'stage_height': video_size[1], 'font_face': 'PingFangSC-Regular', 'font_size': math.ceil(video_size[1]/23), 'text_opacity': 0.8, 'duration_marquee': min(max(6.75*video_size[0]/video_size[1]-4, 3.0), 8.0), 'duration_still': 5.0}, **d2aflags)
         for i, j in ((('stage_width', 'stage_height', 'reserve_blank'), int), (('font_size', 'text_opacity', 'comment_duration', 'duration_still', 'duration_marquee'), float)):
             for k in i:
                 if k in d2aflags:
@@ -233,7 +233,9 @@ def biligrab(url, *, debug=False, verbose=False, media=None, comment=None, cooki
                 if 'vdpau' in i or 'vaapi' in i or 'vda' in i:
                     increase_fps = False
                     break
-        command_line = ['mpv', '--autofit', '950x540']
+        command_line = ['mpv']
+        if video_size[0] >= 1280 or video_size[1] >= 720:
+            command_line += ['--fs', '--autofit', '950x540']
         if mpv_version_gte_0_6:
             command_line += ['--cache-file', 'TMP']
         if increase_fps and mpv_version_gte_0_6:  # Drop frames at vo side but not at decoder side to prevent A/V sync issues

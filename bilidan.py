@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 # Biligrab-Danmaku2ASS
 #
@@ -52,12 +53,12 @@ import zlib
 
 USER_AGENT_PLAYER = 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:6.0.2) Gecko/20100101 Firefox/6.0.2 Fengfan/1.0'
 USER_AGENT_API = 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:6.0.2) Gecko/20100101 Firefox/6.0.2 Fengfan/1.0'
-APPKEY = '85eb6835b0a1034e'  # The same key as in original Biligrab
-APPSEC = '2ad42749773c441109bdc0191257a664'  # Do not abuse please, get one yourself if you need
+APPKEY = '452d3958f048c02a'  # From some source
+APPSEC = ''  # We shall not release this from now
 BILIGRAB_HEADER = {'User-Agent': USER_AGENT_API, 'Cache-Control': 'no-cache', 'Pragma': 'no-cache'}
 
 
-def biligrab(url, *, debug=False, verbose=False, media=None, cookie=None, quality=None, source=None, keep_fps=False, mpvflags=[], d2aflags={}):
+def biligrab(url, *, debug=False, verbose=False, media=None, comment=None, cookie=None, quality=None, source=None, keep_fps=False, mpvflags=[], d2aflags={}, fakeip=None):
 
     url_get_metadata = 'http://api.bilibili.com/view?'
     url_get_comment = 'http://comment.bilibili.com/%(cid)s.xml'
@@ -71,12 +72,12 @@ def biligrab(url, *, debug=False, verbose=False, media=None, cookie=None, qualit
 
         Return value: (aid, pid)
         '''
-        regex = re.compile('http:/*[^/]+/video/av(\\d+)(/|/index.html|/index_(\\d+).html)?(\\?|#|$)')
+        regex = re.compile('(http:/*[^/]+/video/)?av(\\d+)(/|/index.html|/index_(\\d+).html)?(\\?|#|$)')
         regex_match = regex.match(url)
         if not regex_match:
             raise ValueError('Invalid URL: %s' % url)
-        aid = regex_match.group(1)
-        pid = regex_match.group(3) or '1'
+        aid = regex_match.group(2)
+        pid = regex_match.group(4) or '1'
         return aid, pid
 
     def fetch_video_metadata(aid, pid):
@@ -87,7 +88,8 @@ def biligrab(url, *, debug=False, verbose=False, media=None, cookie=None, qualit
         Return value: {'cid': cid, 'title': title}
         '''
         req_args = {'type': 'json', 'appkey': APPKEY, 'id': aid, 'page': pid}
-        req_args['sign'] = bilibili_hash(req_args)
+        #req_args['sign'] = bilibili_hash(req_args)
+        req_args['sign'] = ''
         _, response = fetch_url(url_get_metadata+urllib.parse.urlencode(req_args), user_agent=USER_AGENT_API, cookie=cookie)
         try:
             response = dict(json.loads(response.decode('utf-8', 'replace')))
@@ -111,8 +113,9 @@ def biligrab(url, *, debug=False, verbose=False, media=None, cookie=None, qualit
             req_args = {'appkey': APPKEY, 'cid': cid}
             if quality is not None:
                 req_args['quality'] = quality
-            req_args['sign'] = bilibili_hash(req_args)
-            _, response = fetch_url(url_get_media+urllib.parse.urlencode(req_args), user_agent=user_agent, cookie=cookie)
+            #req_args['sign'] = bilibili_hash(req_args)
+            req_args['sign'] = ''
+            _, response = fetch_url(url_get_media+urllib.parse.urlencode(req_args), user_agent=user_agent, cookie=cookie, fakeip=fakeip)
             media_urls = [str(k.wholeText).strip() for i in xml.dom.minidom.parseString(response.decode('utf-8', 'replace')).getElementsByTagName('durl') for j in i.getElementsByTagName('url')[:1] for k in j.childNodes if k.nodeType == 4]
             if not fuck_you_bishi_mode and media_urls == ['http://static.hdslb.com/error.mp4']:
                 logging.error('Detected User-Agent block. Switching to fuck-you-bishi mode.')
@@ -218,9 +221,10 @@ def biligrab(url, *, debug=False, verbose=False, media=None, cookie=None, qualit
         Return value: player_exit_code -> int
         '''
         mpv_version_master = tuple(check_env.mpv_version.split('-', 1)[0].split('.'))
-        mpv_version_gte_0_10 = mpv_version_master >= ('0', '10') or (len(mpv_version_master) >= 2 and len(mpv_version_master[1]) >= 2) or mpv_version_master[0] == 'git'
+        mpv_version_gte_0_10 = mpv_version_master >= ('0', '10') or (len(mpv_version_master) >= 2 and len(mpv_version_master[1]) >= 3) or mpv_version_master[0] == 'git'
         mpv_version_gte_0_6 = mpv_version_gte_0_10 or mpv_version_master >= ('0', '6') or (len(mpv_version_master) >= 2 and len(mpv_version_master[1]) >= 2) or mpv_version_master[0] == 'git'
         mpv_version_gte_0_4 = mpv_version_gte_0_6 or mpv_version_master >= ('0', '4') or (len(mpv_version_master) >= 2 and len(mpv_version_master[1]) >= 2) or mpv_version_master[0] == 'git'
+        logging.debug('Compare mpv version: %s %s 0.10' % (check_env.mpv_version, '>=' if mpv_version_gte_0_10 else '<'))
         logging.debug('Compare mpv version: %s %s 0.6' % (check_env.mpv_version, '>=' if mpv_version_gte_0_6 else '<'))
         logging.debug('Compare mpv version: %s %s 0.4' % (check_env.mpv_version, '>=' if mpv_version_gte_0_4 else '<'))
         if increase_fps:  # If hardware decoding (without -copy suffix) is used, do not increase fps
@@ -298,18 +302,22 @@ def biligrab(url, *, debug=False, verbose=False, media=None, cookie=None, qualit
         video_size = (1920, 1080)
 
     logging.info('Loading comments...')
-    comment_out = convert_comments(video_metadata['cid'], video_size)
+    if comment is None:
+        comment_out = convert_comments(video_metadata['cid'], video_size)
+    else:
+        comment_out = open(comment, 'r')
+        comment_out.close()
 
     logging.info('Launching media player...')
     player_exit_code = launch_player(video_metadata, media_urls, comment_out, increase_fps=not keep_fps)
 
-    if player_exit_code == 0:
+    if comment is None and player_exit_code == 0:
         os.remove(comment_out.name)
 
     return player_exit_code
 
 
-def fetch_url(url, *, user_agent=USER_AGENT_PLAYER, cookie=None):
+def fetch_url(url, *, user_agent=USER_AGENT_PLAYER, cookie=None, fakeip=None):
     '''Fetch HTTP URL
 
     Arguments: url, user_agent, cookie
@@ -320,6 +328,9 @@ def fetch_url(url, *, user_agent=USER_AGENT_PLAYER, cookie=None):
     req_headers = {'User-Agent': user_agent, 'Accept-Encoding': 'gzip, deflate'}
     if cookie:
         req_headers['Cookie'] = cookie
+    if fakeip:
+        req_headers['X-Forwarded-For'] = fakeip
+        req_headers['Client-IP'] = fakeip
     req = urllib.request.Request(url=url, headers=req_headers)
     response = urllib.request.urlopen(req, timeout=120)
     content_encoding = response.getheader('Content-Encoding')
@@ -431,6 +442,7 @@ def main():
     parser.add_argument('-c', '--cookie', help='Import Cookie at bilibili.com, type document.cookie at JavaScript console to acquire it')
     parser.add_argument('-d', '--debug', action='store_true', help='Stop execution immediately when an error occures')
     parser.add_argument('-m', '--media', help='Specify local media file to play with remote comments')
+    parser.add_argument('--comment', help='Specify local ASS comment file to play with remote media')
     parser.add_argument('-q', '--quality', type=int, help='Specify video quality, -q 1 for the lowest, -q 4 for HD')
     parser.add_argument('-s', '--source', help='Specify the source of video provider.\n' +
                                                'Available values:\n' +
@@ -438,6 +450,7 @@ def main():
                                                'overseas: CDN acceleration for users outside china\n' +
                                                'flvcd: Video parsing service provided by FLVCD.com\n' +
                                                'html5: Low quality video provided by m.acg.tv for mobile users')
+    parser.add_argument('-f', '--fakeip', help='Fake ip for bypassing restrictions.')
     parser.add_argument('-v', '--verbose', action='store_true', help='Print more debugging information')
     parser.add_argument('--hd', action='store_true', help='Shorthand for -q 4')
     parser.add_argument('--keep-fps', action='store_true', help='Use the same framerate as the video to animate comments, instead of increasing to 60 fps')
@@ -454,10 +467,11 @@ def main():
         raise ValueError('invalid value specified for --source, see --help for more information')
     mpvflags = args.mpvflags.split()
     d2aflags = dict((i.split('=', 1) if '=' in i else [i, ''] for i in args.d2aflags.split(','))) if args.d2aflags else {}
+    fakeip = args.fakeip if args.fakeip else None
     retval = 0
     for url in args.url:
         try:
-            retval = retval or biligrab(url, debug=args.debug, verbose=args.verbose, media=args.media, cookie=args.cookie, quality=quality, source=source, keep_fps=args.keep_fps, mpvflags=mpvflags, d2aflags=d2aflags)
+            retval = retval or biligrab(url, debug=args.debug, verbose=args.verbose, media=args.media, comment=args.comment, cookie=args.cookie, quality=quality, source=source, keep_fps=args.keep_fps, mpvflags=mpvflags, d2aflags=d2aflags, fakeip=args.fakeip)
         except OSError as e:
             logging.error(e)
             retval = retval or e.errno
